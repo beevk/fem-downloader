@@ -3,6 +3,8 @@ import fetchCookie from "fetch-cookie";
 import { spawn } from "child_process";
 import fs from "fs";
 import config from "./config.js";
+import Throttle from "throttle";
+import PQueue from "p-queue";
 
 const COURSES_URL = "https://api.frontendmasters.com/v1/kabuki/courses";
 
@@ -19,9 +21,14 @@ const videoQualities = {
   360: "index_360_Q8_2mbps",
 };
 
+
+const concurrentDownload = config.CONCURRENT_DOWNLOADS || 1;
+const downloadSpeed = config.CONCURRENT_DOWNLOADS || 1000000;
+
+const queue = new PQueue({ concurrency: concurrentDownload });
+
 const main = async () => {
   const { FEM_AUTH_MOD, COURSE_URL, QUALITY } = config;
-
   const quality = videoQualities[QUALITY];
 
   const jar = new fetchCookie.toughCookie.CookieJar();
@@ -32,7 +39,6 @@ const main = async () => {
   const fetch = fetchCookie(nodeFetch, jar);
 
   const courseType = COURSE_URL.replace(/\/+$/gm, "").split("/").at(-1);
-
   const res = await fetch(`${COURSES_URL}/${courseType}`, { headers });
   const data = await res.json();
   const title = data.title;
@@ -48,42 +54,52 @@ const main = async () => {
   }));
 
   for (const lesson of lessons) {
-    const res = await fetch(
-      `https://api.frontendmasters.com/v1/kabuki/video/${lesson.hash}/source?f=m3u8`,
-      { headers },
-    );
-    const { url } = await res.json();
-    const finalUrl = [...url.split("/").slice(0, -1), `${quality}.m3u8`].join(
-      "/",
-    );
-
-    headers["Cookie"] = await jar.getCookieString(finalUrl);
-
-    const joinedHeaders = Object.entries(headers)
-      .map(([k, v]) => `${k}: ${v}`)
-      .join("\n");
-
-    const proc = spawn("ffmpeg", [
-      "-y",
-      "-headers",
-      joinedHeaders,
-      "-i",
-      finalUrl,
-      "-map",
-      "0",
-      "-c",
-      "copy",
-      `${title}/${lesson.index}_${lesson.title}.mp4`,
-    ]);
-    proc.stdout.on("data", function (data) {
-      console.log(data);
-    });
-
-    proc.stderr.setEncoding("utf8");
-    proc.stderr.on("data", function (data) {
-      console.log(data);
-    });
+    queue.add(() => downloadLesson(lesson, title, quality, fetch, jar));
   }
+
+  await queue.onIdle();
+};
+
+const downloadLesson = async (lesson, title, quality, fetch, jar) => {
+  const res = await fetch(
+    `https://api.frontendmasters.com/v1/kabuki/video/${lesson.hash}/source?f=m3u8`,
+    { headers },
+  );
+  const { url } = await res.json();
+  const finalUrl = [...url.split("/").slice(0, -1), `${quality}.m3u8`].join("/");
+
+  headers["Cookie"] = await jar.getCookieString(finalUrl);
+
+  const joinedHeaders = Object.entries(headers)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join("\n");
+
+  const throttledStream = new Throttle(downloadSpeed);
+
+  const proc = spawn("ffmpeg", [
+    "-y",
+    "-headers",
+    joinedHeaders,
+    "-i",
+    finalUrl,
+    "-map",
+    "0",
+    "-c",
+    "copy",
+    `${title}/${lesson.index}_${lesson.title}.mp4`,
+  ]);
+
+  proc.stdout.pipe(throttledStream).pipe(process.stdout);
+
+  proc.stderr.setEncoding("utf8");
+  proc.stderr.on("data", function (data) {
+    console.log(data);
+  });
+
+  await new Promise((resolve, reject) => {
+    proc.on("close", resolve);
+    proc.on("error", reject);
+  });
 };
 
 await main();
