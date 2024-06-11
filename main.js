@@ -21,11 +21,14 @@ const videoQualities = {
   360: "index_360_Q8_2mbps",
 };
 
-
+// Configure the queue and throttle
 const concurrentDownload = config.CONCURRENT_DOWNLOADS || 1;
-const downloadSpeed = config.CONCURRENT_DOWNLOADS || 1000000;
-
 const queue = new PQueue({ concurrency: concurrentDownload });
+const downloadSpeed = config.CONCURRENT_DOWNLOADS || 1000000; // 1 Mbps (adjust as needed)
+let downloadLocation = config.DOWNLOAD_LOCATION || ".";
+if (downloadLocation.endsWith('/')) {
+  downloadLocation = downloadLocation.slice(0, -1);
+}
 
 const main = async () => {
   const { FEM_AUTH_MOD, COURSE_URL, QUALITY } = config;
@@ -43,8 +46,8 @@ const main = async () => {
   const data = await res.json();
   const title = data.title;
 
-  if (!fs.existsSync(title)) {
-    fs.mkdirSync(title);
+  if (!fs.existsSync(`${downloadLocation}/${title}`)) {
+    fs.mkdirSync(`${downloadLocation}/${title}`, { recursive: true });
   }
 
   const lessons = Object.entries(data.lessonData).map(([k, v]) => ({
@@ -86,7 +89,7 @@ const downloadLesson = async (lesson, title, quality, fetch, jar) => {
     "0",
     "-c",
     "copy",
-    `${title}/${lesson.index}_${lesson.title}.mp4`,
+    `${downloadLocation}/${title}/${lesson.index}_${lesson.title}.mp4`,
   ]);
 
   proc.stdout.pipe(throttledStream).pipe(process.stdout);
