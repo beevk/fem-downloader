@@ -27,6 +27,9 @@ const config = {
   FEM_AUTH_MOD: "", // Can be found in browser cookies after logging in (it changes every log in)
   COURSE_URL: "", // Course url
   QUALITY: "2160", // 2160, 1440, 1080, 720, 360 (check which are available for your course before setting)
+  CONCURRENT_DOWNLOADS: 1,
+  DOWNLOAD_SPEED: 1000000, // 1 Mbps
+  DOWNLOAD_LOCATION: "/home/user1/Downloads/courses/" // Accepts both relative and absolute path
 };
 ```
 
@@ -39,3 +42,9 @@ const config = {
 ## License
 
 GPLv3
+const config = {
+  FEM_AUTH_MOD: "",
+  COURSE_URL: "",
+  QUALITY: "2160", // 2160, 1440, 1080, 720, 360
+  
+};
